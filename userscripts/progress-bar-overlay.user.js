@@ -39,8 +39,8 @@
         let container = document.createElement('div');
         container.id = 'kiosk-instagram-bars';
         container.style.cssText = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 6px;
-            z-index: 2147483647; display: flex; gap: 4px; padding: 4px 4px 0 4px;
+            position: fixed; top: 0; left: 0; width: 100%; height: 10px;
+            z-index: 2147483647; display: flex; gap: 4px; padding: 4px 4px 20 4px;
             box-sizing: border-box; pointer-events: none; background: rgba(0,0,0,0.25);
         `;
 
