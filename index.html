@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Kiosk Master v4.1 (Radar + Anti-Throttling)</title>
+    <title>Kiosk Master v4.2 (Radar, Anti-Throttling & Pause Sync)</title>
     <style>
         /* === TEMA E ESTRUTURA === */
         body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; height: 100vh; margin: 0; overflow: hidden; }
@@ -12,12 +12,15 @@
         .info-group { text-align: left; flex: 1; }
         h1 { margin: 0; font-size: 1.4rem; color: #2196F3; }
         .current-status { font-size: 0.95rem; color: #aaa; margin-top: 5px; font-family: monospace; }
-        .timer-display { font-size: 2.5rem; font-weight: bold; color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.2); margin: 0 30px; font-family: monospace; width: 60px; text-align: center; }
+        .timer-display { font-size: 2.5rem; font-weight: bold; color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.2); margin: 0 20px; font-family: monospace; width: 60px; text-align: center; }
         
+        .btn-group { display: flex; gap: 10px; align-items: center; }
         button { background: #2196F3; color: #fff; border: none; padding: 10px 20px; border-radius: 5px; font-size: 0.9rem; cursor: pointer; font-weight: bold; transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
         button:hover { filter: brightness(1.2); transform: scale(1.02); }
-        button.start { background: #00E676; color: #000; padding: 12px 30px; font-size: 1.1rem; }
-        button.stop { background: #F44336; color: white; padding: 12px 30px; font-size: 1.1rem; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; filter: none; }
+        button.start { background: #00E676; color: #000; padding: 12px 25px; font-size: 1.1rem; }
+        button.stop { background: #F44336; color: white; padding: 12px 25px; font-size: 1.1rem; }
+        button.pause { background: #FF9800; color: #000; padding: 12px 20px; font-size: 1.1rem; display: none; } /* Escondido por padrão */
         button.save { background: #FF9800; }
         button.add { background: #4CAF50; margin-top: 10px; }
         button.delete { background: #F44336; padding: 8px; border-radius: 4px; }
@@ -49,9 +52,8 @@
         .log-warn { color: #FF9800; }
         .log-info { color: #00E676; }
         .log-error { color: #F44336; }
-        .log-ping { color: #03A9F4; font-style: italic; } /* Cor do Radar */
+        .log-ping { color: #03A9F4; font-style: italic; }
 
-        /* Scrollbar Personalizada */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #111; }
         ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
@@ -68,9 +70,11 @@
 
         <button class="save" id="btn-save" onclick="salvarRotasManualmente()">💾 Salvar Alterações</button>
 
-        <div id="display-timer" class="timer-display">--</div>
-
-        <button id="btn-start" class="start" onclick="toggleKiosk()">▶ INICIAR KIOSK</button>
+        <div class="btn-group">
+            <div id="display-timer" class="timer-display">--</div>
+            <button id="btn-pause" class="pause" onclick="togglePauseLocal()">⏸ PAUSAR</button>
+            <button id="btn-start" class="start" onclick="toggleKiosk()">▶ INICIAR KIOSK</button>
+        </div>
     </div>
 
     <div class="list-container" id="lista-rotas"></div>
@@ -85,11 +89,10 @@
     </div>
 
     <div class="log-container" id="log-box">
-        <div class="log-entry"><span class="log-time">--:--:--</span><span class="log-msg log-info">Sistema inicializado com Anti-Throttling e Wake Lock.</span></div>
+        <div class="log-entry"><span class="log-time">--:--:--</span><span class="log-msg log-info">Sistema inicializado (v4.2 - Sync Ready).</span></div>
     </div>
 
     <script>
-        // === DADOS PADRÃO ===
         const rotasPadrao = [
             { nome: 'Wikipedia', url: 'https://pt.wikipedia.org/', tempo: 15 },
             { nome: 'BBC', url: 'https://www.bbc.com/portuguese', tempo: 10 },
@@ -99,12 +102,12 @@
         let rotas = [];
         let janelaKiosk = null;
         let running = false;
+        let isPaused = false;
         let draggedItem = null;
-        let tempoRestante = 0; // Variável global para o Worker ler
+        let tempoRestante = 0; 
 
         // ==========================================
-        // MÁGICA DO WEB WORKER (RELÓGIO BLINDADO)
-        // Impede o Edge/Chrome de congelar o timer
+        // WEB WORKER (RELÓGIO BLINDADO)
         // ==========================================
         let timerWorker = null;
         const workerCode = `
@@ -127,16 +130,22 @@
             renderizarLista();
         };
 
-        // === SISTEMA DE LOGS ===
+        // Escuta comandos vindos do Popup (Ex: Usuário clicou em Pausar lá no Kiosk)
+        window.addEventListener('message', function(e) {
+            if (e.data && e.data.type === 'kiosk_action') {
+                if (e.data.action === 'toggle_pause') {
+                    togglePauseLocal(); // Aciona a mesma função como se tivessem clicado aqui
+                }
+            }
+        });
+
         function log(msg, type = 'normal') {
             const box = document.getElementById('log-box');
             const entry = document.createElement('div');
             entry.className = 'log-entry';
-            
             const timeSpan = document.createElement('span');
             timeSpan.className = 'log-time';
             timeSpan.innerText = new Date().toLocaleTimeString();
-
             const msgSpan = document.createElement('span');
             msgSpan.className = 'log-msg';
             if (type === 'warn') msgSpan.classList.add('log-warn');
@@ -144,70 +153,49 @@
             if (type === 'error') msgSpan.classList.add('log-error');
             if (type === 'ping') msgSpan.classList.add('log-ping');
             msgSpan.innerText = msg;
-
             entry.appendChild(timeSpan);
             entry.appendChild(msgSpan);
-            
             box.appendChild(entry);
-            box.scrollTop = box.scrollHeight; // Auto-scroll
+            box.scrollTop = box.scrollHeight; 
         }
 
         function copiarLog() {
             const box = document.getElementById('log-box');
             let textToCopy = "Kiosk Master Log - " + new Date().toLocaleString() + "\n\n";
-            box.querySelectorAll('.log-entry').forEach(entry => {
-                textToCopy += entry.innerText + "\n";
-            });
-            navigator.clipboard.writeText(textToCopy).then(() => {
-                log("Log copiado para a área de transferência!", "info");
-            }).catch(err => alert("Erro ao copiar o log."));
+            box.querySelectorAll('.log-entry').forEach(entry => { textToCopy += entry.innerText + "\n"; });
+            navigator.clipboard.writeText(textToCopy).then(() => log("Log copiado!", "info")).catch(err => alert("Erro ao copiar."));
         }
 
-        setInterval(() => {
-            document.getElementById('log-box').innerHTML = '';
-            log("🧹 Logs limpos automaticamente (60min).", "info");
-        }, 3600000);
+        setInterval(() => { document.getElementById('log-box').innerHTML = ''; log("🧹 Logs limpos (60min).", "info"); }, 3600000);
 
-        // === GERENCIAMENTO DE DADOS (LOCAL STORAGE) ===
         function carregarRotas() {
             const salvas = localStorage.getItem('kiosk_master_routes');
-            if (salvas) {
-                rotas = JSON.parse(salvas);
-                log("Configurações carregadas da memória.", "info");
-            } else {
-                rotas = JSON.parse(JSON.stringify(rotasPadrao));
-                log("Nenhuma configuração salva. Usando padrão.", "warn");
-            }
+            if (salvas) { rotas = JSON.parse(salvas); log("Configurações carregadas.", "info"); } 
+            else { rotas = JSON.parse(JSON.stringify(rotasPadrao)); log("Usando padrão.", "warn"); }
         }
 
         function salvarRotasManualmente() {
             lerListaDoDOM();
             localStorage.setItem('kiosk_master_routes', JSON.stringify(rotas));
-            log("💾 Lista de sites salva com sucesso!", "info");
+            log("💾 Lista salva!", "info");
             const btn = document.getElementById('btn-save');
             btn.innerText = "✔ Salvo!"; btn.style.background = "#4CAF50";
             setTimeout(() => { btn.innerText = "💾 Salvar Alterações"; btn.style.background = "#FF9800"; }, 2000);
         }
 
-        // === RENDERIZAÇÃO DA LISTA & DRAG AND DROP ===
         function renderizarLista() {
             const container = document.getElementById('lista-rotas');
             container.innerHTML = '';
-
             rotas.forEach((rota, index) => {
                 const row = document.createElement('div');
-                row.className = 'route-item';
-                row.id = `row-${index}`;
-                row.draggable = !running;
-
+                row.className = 'route-item'; row.id = `row-${index}`; row.draggable = !running;
                 row.innerHTML = `
                     <div class="drag-handle" title="Segure para arrastar">☰</div>
-                    <input type="text" class="input-name" value="${rota.nome}" placeholder="Nome (Ex: Siscorp)" ${running ? 'disabled' : ''}>
+                    <input type="text" class="input-name" value="${rota.nome}" placeholder="Nome" ${running ? 'disabled' : ''}>
                     <input type="text" class="input-url" value="${rota.url}" placeholder="http://..." ${running ? 'disabled' : ''}>
-                    <input type="number" class="input-time" value="${rota.tempo}" min="3" placeholder="Segs" title="Tempo em segundos" ${running ? 'disabled' : ''}>
-                    <button class="delete" onclick="removerLinha(this)" title="Remover" ${running ? 'disabled' : ''}>🗑️</button>
+                    <input type="number" class="input-time" value="${rota.tempo}" min="3" placeholder="Segs" ${running ? 'disabled' : ''}>
+                    <button class="delete" onclick="removerLinha(this)" ${running ? 'disabled' : ''}>🗑️</button>
                 `;
-
                 row.addEventListener('dragstart', function(e) { draggedItem = this; setTimeout(() => this.classList.add('dragging'), 0); });
                 row.addEventListener('dragend', function() { this.classList.remove('dragging'); draggedItem = null; lerListaDoDOM(); });
                 row.addEventListener('dragover', function(e) { e.preventDefault(); });
@@ -219,107 +207,107 @@
                         else this.parentNode.insertBefore(draggedItem, this);
                     }
                 });
-
                 container.appendChild(row);
             });
         }
 
-        function adicionarLinha() {
-            rotas.push({ nome: 'Novo Site', url: 'https://', tempo: 15 });
-            renderizarLista();
-            const container = document.getElementById('lista-rotas');
-            container.scrollTop = container.scrollHeight;
-        }
-
+        function adicionarLinha() { rotas.push({ nome: 'Novo Site', url: 'https://', tempo: 15 }); renderizarLista(); document.getElementById('lista-rotas').scrollTop = 9999; }
         function removerLinha(btn) { btn.parentElement.remove(); lerListaDoDOM(); }
-
         function lerListaDoDOM() {
             const rows = document.querySelectorAll('.route-item');
             rotas = [];
             rows.forEach((row) => {
                 const inputs = row.querySelectorAll('input');
-                rotas.push({
-                    nome: inputs[0].value || 'Sem Nome',
-                    url: inputs[1].value || 'about:blank',
-                    tempo: parseInt(inputs[2].value) || 10
-                });
+                rotas.push({ nome: inputs[0].value || 'Sem Nome', url: inputs[1].value || 'about:blank', tempo: parseInt(inputs[2].value) || 10 });
             });
         }
 
         function atualizarDestaqueVisual(index) {
             document.querySelectorAll('.route-item').forEach(r => r.classList.remove('active'));
             const rowAtual = document.getElementById(`row-${index}`);
-            if (rowAtual) {
-                rowAtual.classList.add('active');
-                rowAtual.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
+            if (rowAtual) { rowAtual.classList.add('active'); rowAtual.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
         }
 
-        // === CONTROLE DO KIOSK (MASTER) ===
-        function toggleKiosk() {
-            if (running) pararKiosk();
-            else iniciarKiosk();
+        // === CONTROLE ===
+        function toggleKiosk() { if (running) pararKiosk(); else iniciarKiosk(); }
+
+        function togglePauseLocal() {
+            if (!running) return;
+            isPaused = !isPaused;
+            const btnPause = document.getElementById('btn-pause');
+            
+            if (isPaused) {
+                btnPause.innerText = "▶ RETOMAR";
+                btnPause.style.background = "#4CAF50";
+                log("⏸ Rotação Pausada.", "warn");
+            } else {
+                btnPause.innerText = "⏸ PAUSAR";
+                btnPause.style.background = "#FF9800";
+                log("▶ Rotação Retomada.", "info");
+            }
+
+            // Avisa o Popup da mudança de status (Para ele pausar a animação visual lá)
+            sincronizarComPopup();
+        }
+
+        function sincronizarComPopup() {
+            if (janelaKiosk && !janelaKiosk.closed) {
+                try {
+                    janelaKiosk.postMessage({ type: 'kiosk_sync', paused: isPaused, time: tempoRestante }, '*');
+                } catch(e) {}
+            }
         }
 
         function iniciarKiosk() {
             lerListaDoDOM();
-            if (rotas.length === 0) { alert("Adicione pelo menos um site na lista!"); return; }
+            if (rotas.length === 0) { alert("Adicione um site!"); return; }
 
             localStorage.setItem('kiosk_master_routes', JSON.stringify(rotas));
-            running = true;
+            running = true; isPaused = false;
             renderizarLista();
 
             const params = `width=${screen.availWidth},height=${screen.availHeight},left=0,top=0,menubar=no,toolbar=no,location=no,status=no`;
             janelaKiosk = window.open('about:blank', 'KIOSK_POPUP', params);
 
-            if (!janelaKiosk || janelaKiosk.closed || typeof janelaKiosk.closed == 'undefined') {
-                alert("⚠️ Popup bloqueado! Permita popups no ícone da barra de endereço e tente novamente.");
-                log("ERRO: O navegador bloqueou a abertura do Popup.", "error");
+            if (!janelaKiosk || janelaKiosk.closed) {
+                alert("⚠️ Popup bloqueado!"); log("ERRO: Popup bloqueado.", "error");
                 pararKiosk(); return;
             }
 
             const btnStart = document.getElementById('btn-start');
-            btnStart.innerText = "⏹ PARAR KIOSK";
-            btnStart.classList.remove('start'); btnStart.classList.add('stop');
-            document.getElementById('btn-add').disabled = true;
-            document.getElementById('btn-save').disabled = true;
+            btnStart.innerText = "⏹ PARAR KIOSK"; btnStart.classList.remove('start'); btnStart.classList.add('stop');
+            
+            const btnPause = document.getElementById('btn-pause');
+            btnPause.style.display = 'block'; btnPause.innerText = "⏸ PAUSAR"; btnPause.style.background = "#FF9800";
 
-            log("🚀 Kiosk Iniciado. Monitoramento ativo.", "info");
+            document.getElementById('btn-add').disabled = true; document.getElementById('btn-save').disabled = true;
+
+            log("🚀 Kiosk Iniciado.", "info");
             rotacionar(0);
         }
 
         function pararKiosk() {
-            running = false;
+            running = false; isPaused = false;
             if (janelaKiosk && !janelaKiosk.closed) janelaKiosk.close();
-            
-            // Para o Web Worker
             timerWorker.postMessage('stop');
             
             const btnStart = document.getElementById('btn-start');
-            btnStart.innerText = "▶ INICIAR KIOSK";
-            btnStart.classList.remove('stop'); btnStart.classList.add('start');
+            btnStart.innerText = "▶ INICIAR KIOSK"; btnStart.classList.remove('stop'); btnStart.classList.add('start');
+            document.getElementById('btn-pause').style.display = 'none';
             document.getElementById('display-timer').innerText = "--";
             document.getElementById('status-text').innerText = "Parado. Edição liberada.";
-            document.getElementById('btn-add').disabled = false;
-            document.getElementById('btn-save').disabled = false;
+            document.getElementById('btn-add').disabled = false; document.getElementById('btn-save').disabled = false;
 
             document.querySelectorAll('.route-item').forEach(r => r.classList.remove('active'));
             log("🛑 Kiosk Parado Manualmente.", "warn");
             renderizarLista();
         }
 
-        // === LÓGICA DE RADAR (PINGS) ===
         function checarDisponibilidade(url, nome) {
             const startPing = performance.now();
             fetch(url, { mode: 'no-cors', cache: 'no-store' })
-                .then(response => {
-                    const timeTaken = Math.round(performance.now() - startPing);
-                    log(`📡 Radar [${nome}]: OK! Página respondeu em ${timeTaken}ms.`, "ping");
-                })
-                .catch(error => {
-                    const timeTaken = Math.round(performance.now() - startPing);
-                    log(`❌ Radar [${nome}]: INDISPONÍVEL (Erro de Rede/Timeout). Falhou após ${timeTaken}ms.`, "error");
-                });
+                .then(response => { log(`📡 Radar [${nome}]: OK! (${Math.round(performance.now() - startPing)}ms).`, "ping"); })
+                .catch(error => { log(`❌ Radar [${nome}]: INDISPONÍVEL. Falhou após ${Math.round(performance.now() - startPing)}ms.`, "error"); });
         }
 
         function rotacionar(index) {
@@ -333,86 +321,57 @@
             log(`➡️ Navegando para: ${rota.nome}`);
             atualizarDestaqueVisual(index);
 
-            // ==========================================
-            // MÁGICA DA INTEGRAÇÃO VISUAL (Hash Injection)
-            // ==========================================
             let instrucoesUI = `kiosk_idx=${index}&kiosk_tot=${rotas.length}&kiosk_time=${rota.tempo}`;
             let separador = rota.url.includes('#') ? '&' : '#';
             let urlFinalComInstrucoes = rota.url + separador + instrucoesUI;
 
-            // Navegação à prova de COOP (Mantém o vínculo reabrindo se necessário)
             try {
-                if (!janelaKiosk || janelaKiosk.closed) {
-                    janelaKiosk = window.open(urlFinalComInstrucoes, 'KIOSK_POPUP');
-                } else {
-                    janelaKiosk.location.href = urlFinalComInstrucoes;
-                }
-            } catch (e) {
-                janelaKiosk = window.open(urlFinalComInstrucoes, 'KIOSK_POPUP');
-            }
+                if (!janelaKiosk || janelaKiosk.closed) janelaKiosk = window.open(urlFinalComInstrucoes, 'KIOSK_POPUP');
+                else janelaKiosk.location.href = urlFinalComInstrucoes;
+            } catch (e) { janelaKiosk = window.open(urlFinalComInstrucoes, 'KIOSK_POPUP'); }
 
-            // Dispara o Radar em segundo plano
             checarDisponibilidade(rota.url, rota.nome);
 
-            // ==========================================
-            // TIMER BLINDADO (WEB WORKER)
-            // ==========================================
             tempoRestante = rota.tempo;
             document.getElementById('display-timer').innerText = tempoRestante;
-            
-            timerWorker.postMessage('start'); // Manda o trabalhador começar a contar
+            timerWorker.postMessage('start');
 
             timerWorker.onmessage = function() {
-                tempoRestante--;
-                document.getElementById('display-timer').innerText = tempoRestante;
-
-                if (tempoRestante === 8 && rotas.length > 1) {
-                    preload(rotas[nextIndex].url);
+                if (isPaused) {
+                    // Manda sinal contínuo para garantir que o popup sabe que está pausado
+                    sincronizarComPopup(); 
+                    return; 
                 }
 
+                tempoRestante--;
+                document.getElementById('display-timer').innerText = tempoRestante;
+                sincronizarComPopup(); // Envia o tempo atualizado pro popup desenhar no reloginho dele
+
+                if (tempoRestante === 8 && rotas.length > 1) preload(rotas[nextIndex].url);
+
                 if (tempoRestante <= 0) {
-                    timerWorker.postMessage('stop'); // Para o relógio antes de virar
-                    rotacionar(nextIndex); // Chama a próxima página
+                    timerWorker.postMessage('stop');
+                    rotacionar(nextIndex);
                 }
             };
         }
 
         function preload(url) {
             document.querySelectorAll('link[rel="prerender"]').forEach(l => l.remove());
-            const link = document.createElement('link');
-            link.rel = 'prerender'; link.href = url;
-            document.head.appendChild(link);
+            const link = document.createElement('link'); link.rel = 'prerender'; link.href = url; document.head.appendChild(link);
         }
 
-        setInterval(() => { if(running) document.title = "▶ Kiosk ON " + new Date().toLocaleTimeString(); else document.title = "Kiosk Master"; }, 5000);
+        setInterval(() => { if(running && !isPaused) document.title = "▶ Kiosk ON"; else if(isPaused) document.title = "⏸ Kiosk Pausado"; else document.title = "Kiosk Master"; }, 2000);
 
-        // ==========================================
-        // TRAVA DE TELA (WAKE LOCK API)
-        // Impede que o monitor/TV durma enquanto o Master estiver aberto
-        // ==========================================
+        // === WAKE LOCK ===
         let wakeLock = null;
-
         async function solicitarWakeLock() {
-            try {
-                wakeLock = await navigator.wakeLock.request('screen');
-                log("🔒 Trava de tela ativada. O monitor não vai hibernar.", "info");
-                
-                wakeLock.addEventListener('release', () => {
-                    log("Trava de tela liberada pelo sistema. Tentando reativar...", "warn");
-                });
-            } catch (err) {
-                console.error(`Erro no Wake Lock: ${err.name}, ${err.message}`);
-            }
+            try { wakeLock = await navigator.wakeLock.request('screen'); } 
+            catch (err) { console.error(`Wake Lock Error: ${err.message}`); }
         }
-
-        // Tenta ativar a trava assim que a página carrega e toda vez que você clica nela
         document.addEventListener('visibilitychange', async () => {
-            if (wakeLock !== null && document.visibilityState === 'visible') {
-                solicitarWakeLock();
-            }
+            if (wakeLock !== null && document.visibilityState === 'visible') solicitarWakeLock();
         });
-        
-        // Inicia a trava ao abrir a página
         solicitarWakeLock();
 
     </script>
