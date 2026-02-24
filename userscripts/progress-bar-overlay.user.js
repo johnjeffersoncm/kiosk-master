@@ -3,9 +3,11 @@
 // @namespace    http://violentmonkey.net/
 // @version      1.0
 // @description  Desenha a barra de progresso lendo instruções via URL (Hash)
-// @author       John
+// @author       John Jefferson
 // @match        http://*/*
 // @match        https://*/*
+// @updateURL    https://github.com/johnjeffersoncm/kiosk-master/raw/refs/heads/main/userscripts/progress-bar-overlay.user.js
+// @downloadURL  https://github.com/johnjeffersoncm/kiosk-master/raw/refs/heads/main/userscripts/progress-bar-overlay.user.js
 // @grant        none
 // @run-at       document-start
 // ==/UserScript==
