@@ -5,8 +5,8 @@
 // @description  Isolamento da região das agendas para exibição em Totem/Kiosk com scroll horizontal e horas fixas.
 // @author       John Jefferson
 // @match        https://outlook.office.com/calendar/*
-// @updateURL    https://raw.githubusercontent.com/johnjeffersoncm/kiosk-master/main/userscripts/outlook-calendar-totem.user.js
-// @downloadURL  https://raw.githubusercontent.com/johnjeffersoncm/kiosk-master/main/userscripts/outlook-calendar-totem.user.js
+// @updateURL    https://github.com/johnjeffersoncm/kiosk-master/raw/refs/heads/main/userscripts/outlook-calendar-totem.user.js
+// @downloadURL  https://github.com/johnjeffersoncm/kiosk-master/raw/refs/heads/main/userscripts/outlook-calendar-totem.user.js
 // @grant        GM_addStyle
 // @run-at       document-idle
 // ==/UserScript==
