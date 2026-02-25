@@ -17,13 +17,13 @@
 
     const css = `
         /* 1. BLOQUEIO DEFINITIVO (Regra de Ouro) */
-        #o365header,
-        #RibbonRoot,
-        .___1d1gxkh,
+        #o365header, 
+        #RibbonRoot, 
+        .___1d1gxkh, 
         .left-pane-base-container,
         div[data-app-section="CalendarSurfaceNavigationToolbar"],
         .iiYY1,
-        .tFY7h.a7Ps_ {
+        .tFY7h.a7Ps_ { 
             display: none !important;
         }
 
@@ -63,13 +63,13 @@
         /* 5. SCROLL VERTICAL CONTROLADO */
         .inDayScrollContainer {
             overflow-y: auto !important;
-            height: calc(100vh - 60px) !important;
+            height: calc(100vh - 60px) !important; 
         }
 
         /* 6. LARGURA DAS SALAS */
         /* Ajuste este valor (450px) para definir o quão larga cada sala deve ser */
         .allDayHeaderContent, .inDayContentChild {
-            min-width: 450px !important;
+            min-width: 450px !important; 
         }
     `;
 
@@ -79,7 +79,7 @@
     window.addEventListener('load', () => {
         setTimeout(() => {
             const scroller = document.querySelector('.inDayScrollContainer');
-            if (scroller) scroller.scrollTop = 330;
+            if (scroller) scroller.scrollTop = 330; 
         }, 3000);
     });
 
