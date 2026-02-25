@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Outlook Calendar Kiosk Totem
 // @namespace    http://violentmonkey.net/
-// @version      0.0
+// @version      0.1
 // @description  Isolamento da região das agendas para exibição em Totem/Kiosk com scroll horizontal e horas fixas.
 // @author       John Jefferson
 // @match        https://outlook.office.com/calendar/*
